@@ -17,6 +17,7 @@ class SeeingModel_no_time(SeeingModel):
         self.filters_config = None
         self.seeing_fwhm_system_zenith = None
         self.offset = offset
+        self.filter_wavelength_correction = {}
 
 
 class CloudModel_no_time(CloudModel):
