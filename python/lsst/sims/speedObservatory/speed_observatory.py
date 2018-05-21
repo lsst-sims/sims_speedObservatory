@@ -233,9 +233,10 @@ class Speed_observatory(object):
             self.good_nights = np.in1d(self.sky.info['night'], self.down_nights, invert=True)
 
         # Check if sun is up
-        sunMoon = self.sky.returnSunMoon(mjd)
-        if (sunMoon['sunAlt'] > self.sun_limit) | (self.mjd2night(mjd) in self.down_nights):
-            good = np.where((self.sky.info['mjds'] >= mjd) & (self.sky.info['sunAlts'] <= self.sun_limit) &
+        self.obs.date = mjd - doff
+        self.sun.compute(self.obs)
+        if (self.sun.alt > self.sun_limit) | (self.mjd2night(mjd) in self.down_nights):
+            good = np.where((self.sky.info['mjds'] > mjd) & (self.sky.info['sunAlts'] <= self.sun_limit) &
                             (self.good_nights))[0]
             if np.size(good) == 0:
                 # hack to advance if we are at the end of the mjd list I think
