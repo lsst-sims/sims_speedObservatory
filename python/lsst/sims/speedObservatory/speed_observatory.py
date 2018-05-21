@@ -1,17 +1,27 @@
 from builtins import zip
 from builtins import object
 import numpy as np
+import logging
 from lsst.sims.utils import _hpid2RaDec, _raDec2Hpid, Site, calcLmstLast
 import lsst.sims.skybrightness_pre as sb
 import healpy as hp
 import lsst.sims.featureScheduler.utils as utils
 import ephem
 from lsst.sims.speedObservatory.slew_pre import Slewtime_pre
-from lsst.sims.ocs.downtime import ScheduledDowntime, UnscheduledDowntime
-from lsst.sims.ocs.environment import SeeingModel, CloudModel
-from lsst.sims.ocs.configuration import Environment
-from lsst.sims.ocs.configuration.instrument import Filters
 from lsst.sims.utils import m5_flat_sed
+from . import version
+
+log = logging.getLogger(__name__)
+
+try:
+    from lsst.sims.ocs.downtime import ScheduledDowntime, UnscheduledDowntime
+    from lsst.sims.ocs.configuration import Environment
+    from lsst.sims.ocs.configuration.instrument import Filters
+    from lsst.sims.speedObservatory.model_notime import SeeingModel_no_time, CloudModel_no_time
+except Exception as e:
+    log.exception(e)
+    log.warning('No sims.ocs. To use Speed_observatory provide ScheduledDowntime, '
+                'UnscheduledDowntime, SeeingModel, CloudModel, Environment and Filters')
 
 __all__ = ['Speed_observatory']
 
@@ -20,51 +30,18 @@ sec2days = 1./(3600.*24.)
 default_nside = utils.set_default_nside()
 doff = ephem.Date(0)-ephem.Date('1858/11/17')
 
-
-class SeeingModel_no_time(SeeingModel):
-    """Eliminate the need to use a time_handler object
-    """
-    def __init__(self, offset=0.):
-        """
-        Parameters
-        ----------
-        offset : float
-            XXX-I don't even know the units on this. Days maybe?
-        """
-        self.seeing_db = None
-        self.seeing_dates = None
-        self.seeing_values = None
-        self.environment_config = None
-        self.filters_config = None
-        self.seeing_fwhm_system_zenith = None
-        self.offset = offset
-
-
-class CloudModel_no_time(CloudModel):
-    """Eliminate the need to use a time_handler object
-    """
-    def __init__(self, offset=0.):
-        """Initialize the class.
-
-        Parameters
-        ----------
-        offset : float (0.)
-        """
-        self.cloud_db = None
-        self.cloud_dates = None
-        self.cloud_values = None
-        self.offset = offset
-
-
 class Speed_observatory(object):
     """
     A very very simple observatory model that will take observation requests and supply
     current conditions.
     """
     def __init__(self, mjd_start=59580.035,
-                 readtime=2., filtername=None, f_change_time=140.,
+                 readtime=2., filtername=None, f_change_time=140., shutter_time=1., 
                  nside=default_nside, sun_limit=-13., quickTest=True, alt_limit=20.,
-                 seed=-1, cloud_limit=7., cloud_step=15.):
+                 seed=-1, cloud_limit=0.699, cloud_step=15.,
+                 scheduled_downtime=None, unscheduled_downtime=None,
+                 seeing_model=None, cloud_model=None,
+                 environment=None, filters=None):
         """
         Parameters
         ----------
@@ -78,6 +55,8 @@ class Speed_observatory(object):
             The filter to start the observatory loaded with
         f_change_time : float (120.)
             The time it takes to change filters (seconds)
+        shutter_time : float (1.)
+            The time it takes to open or close the shutter.
         nside : int (32)
             The healpixel nside to make sky calculations on.
         sun_limit : float (-12.)
@@ -86,15 +65,31 @@ class Speed_observatory(object):
             Load only a small pre-computed sky array rather than a full year.
         seed : float
             Random seed to potentially pass to unscheduled downtime
-        cloud_limit : float (7)
-            Close dome for cloud values over this (traditionally measured in 8ths of the sky)
+        cloud_limit : float (0.699)
+            Close dome for cloud values over this (traditionally measured in 8ths of the sky?)
         cloud_step : float (15.)
             Minutes to close if clouds exceed cloud_limit
+        scheduled_downtime : ScheduledDowntime (None)
+            The scheduled downtime interface. If None (default) use sims_ocs module.
+        unscheduled_downtime : UnscheduledDowntime (None)
+            The unscheduled downtime interface. If None (default) use sims_ocs module.
+        seeing_model : SeeingModel (None)
+            The seeing model interface. If None (default) use sims_ocs module.
+        cloud_model : CloudModel (None)
+            The cloud model interface. If None (default) use sims_ocs module.
+        environment : Environment (None)
+            The environment interface. If None (default) use sims_ocs module.
+        filters : Filters (None)
+            The Filters interface. If None (default) use sims_ocs module.
         """
+        # Make it easy to see what version the object is
+        self.version = version
+
         self.mjd_start = mjd_start + 0
         self.mjd = mjd_start
         self.f_change_time = f_change_time
         self.readtime = readtime
+        self.shutter_time = shutter_time
         self.sun_limit = np.radians(sun_limit)
         self.alt_limit = np.radians(alt_limit)
         # Load up the sky brightness model
@@ -131,10 +126,19 @@ class Speed_observatory(object):
 
         # Compute downtimes
         self.down_nights = []
-        sdt = ScheduledDowntime()
+        print(scheduled_downtime)
+        if scheduled_downtime is not None:
+            sdt = scheduled_downtime
+        else:
+            sdt = ScheduledDowntime()
         sdt.initialize()
-        usdt = UnscheduledDowntime()
+
+        if unscheduled_downtime is not None:
+            usdt = unscheduled_downtime
+        else:
+            usdt = UnscheduledDowntime()
         usdt.initialize(random_seed=seed)
+
         for downtime in sdt.downtimes:
             self.down_nights.extend(range(downtime[0], downtime[0]+downtime[1], 1))
         for downtime in usdt.downtimes:
@@ -142,15 +146,29 @@ class Speed_observatory(object):
         self.down_nights.sort()
 
         # Instatiate a seeing model
-        env_config = Environment()
-        filter_config = Filters()
-        self.seeing_model = SeeingModel_no_time()
+        if environment is not None:
+            env_config = environment
+        else:
+            env_config = Environment()
+
+        if filters is not None:
+            filter_config = filters
+        else:
+            filter_config = Filters()
+
+        if seeing_model is not None:
+            self.seeing_model = seeing_model
+        else:
+            self.seeing_model = SeeingModel_no_time()
         self.seeing_model.initialize(env_config, filter_config)
 
-        self.cloud_model = CloudModel_no_time()
+        if cloud_model is not None:
+            self.cloud_model = cloud_model
+        else:
+            self.cloud_model = CloudModel_no_time()
         self.cloud_model.initialize()
         self.cloud_limit = cloud_limit
-        self.cloud_step = cloud_step /60./24.
+        self.cloud_step = cloud_step/60./24.
 
     def slew_time(self, alt, az, mintime=2.):
         """
@@ -267,10 +285,12 @@ class Speed_observatory(object):
             st = 0.
             ft = 0.
 
-        # Assume we can slew while reading the last exposure
+        # Assume we can slew while reading the last exposure (note that slewtime calc gives 2 as a minimum. So this 
+        # will not fail for DD fields, etc.)
         # So, filter change time, slew to target time, expose time, read time
         rt = (observation['nexp']-1.)*self.readtime
-        total_time = (ft + st + observation['exptime'] + rt)*sec2days
+        shutter_time = self.shutter_time*observation['nexp']
+        total_time = (ft + st + observation['exptime'] + rt + shutter_time)*sec2days
         check_result, jump_mjd = self.check_mjd(self.mjd + total_time)
         if check_result:
             # XXX--major decision here, should the status be updated after every observation? Or just assume
@@ -311,6 +331,7 @@ class Speed_observatory(object):
             observation['clouds'] = self.status['clouds']
             observation['sunAlt'] = self.status['sunAlt']
             observation['moonAlt'] = self.status['moonAlt']
+            # We had advanced the slew and filter change, so subtract that off and add the total visit time.
             self.set_mjd(self.mjd + total_time - (ft + st)*sec2days)
 
             return observation
