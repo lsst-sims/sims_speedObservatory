@@ -1,7 +1,6 @@
 from builtins import zip
 from builtins import object
 import numpy as np
-import logging
 from lsst.sims.utils import _hpid2RaDec, _raDec2Hpid, Site, calcLmstLast
 import lsst.sims.skybrightness_pre as sb
 import healpy as hp
@@ -10,18 +9,10 @@ import ephem
 from lsst.sims.speedObservatory.slew_pre import Slewtime_pre
 from lsst.sims.utils import m5_flat_sed
 from . import version
-
-log = logging.getLogger(__name__)
-
-try:
-    from lsst.sims.ocs.downtime import ScheduledDowntime, UnscheduledDowntime
-    from lsst.sims.ocs.configuration import Environment
-    from lsst.sims.ocs.configuration.instrument import Filters
-    from lsst.sims.speedObservatory.model_notime import SeeingModel_no_time, CloudModel_no_time
-except Exception as e:
-    log.exception(e)
-    log.warning('No sims.ocs. To use Speed_observatory provide ScheduledDowntime, '
-                'UnscheduledDowntime, SeeingModel, CloudModel, Environment and Filters')
+from lsst.sims.downtimeModel import ScheduledDowntime, UnscheduledDowntime
+from lsst.sims.seeingModel import SeeingModel
+from lsst.sims.cloudModel import CloudModel
+from astropy,time import Time
 
 __all__ = ['Speed_observatory']
 
@@ -29,6 +20,31 @@ __all__ = ['Speed_observatory']
 sec2days = 1./(3600.*24.)
 default_nside = utils.set_default_nside()
 doff = ephem.Date(0)-ephem.Date('1858/11/17')
+
+
+class dummy_time_handler(object):
+    """
+    Don't need the full time handler, so save a dependency and make this
+    """
+
+    def __init__(self, mjd_init):
+        """
+        Parameters
+        ----------
+        mjd_init : float
+            The initial mjd
+        """
+        self._unix_start = datetime(1970, 1, 1)
+        t = Time(mjd_init, format='mjd')
+        self.initial_dt =t.datetime
+
+    def time_since_given_datetime(self, datetime1, datetime2=None):
+         if datetime2 is None:
+            datetime2 = self._unix_start
+        return (datetime1 - datetime2).total_seconds()
+
+
+
 
 class Speed_observatory(object):
     """
