@@ -10,9 +10,10 @@ from lsst.sims.speedObservatory.slew_pre import Slewtime_pre
 from lsst.sims.utils import m5_flat_sed
 from . import version
 from lsst.sims.downtimeModel import ScheduledDowntime, UnscheduledDowntime
-from lsst.sims.seeingModel import SeeingModel
+from lsst.sims.seeingModel import SeeingSim
 from lsst.sims.cloudModel import CloudModel
-from astropy,time import Time
+from astropy.time import Time
+from datetime import datetime
 
 __all__ = ['Speed_observatory']
 
@@ -24,9 +25,8 @@ doff = ephem.Date(0)-ephem.Date('1858/11/17')
 
 class dummy_time_handler(object):
     """
-    Don't need the full time handler, so save a dependency and make this
+    Don't need the full time handler, so save a dependency and use this.
     """
-
     def __init__(self, mjd_init):
         """
         Parameters
@@ -36,14 +36,17 @@ class dummy_time_handler(object):
         """
         self._unix_start = datetime(1970, 1, 1)
         t = Time(mjd_init, format='mjd')
-        self.initial_dt =t.datetime
+        self.initial_dt = t.datetime
 
-    def time_since_given_datetime(self, datetime1, datetime2=None):
-         if datetime2 is None:
+    def time_since_given_datetime(self, datetime1, datetime2=None, reverse=False):
+        """
+        """
+        if datetime2 is None:
             datetime2 = self._unix_start
-        return (datetime1 - datetime2).total_seconds()
-
-
+        if reverse:
+            return (datetime1 - datetime2).total_seconds()
+        else:
+            return (datetime2 - datetime1).total_seconds()
 
 
 class Speed_observatory(object):
@@ -52,7 +55,7 @@ class Speed_observatory(object):
     current conditions.
     """
     def __init__(self, mjd_start=59580.035,
-                 readtime=2., filtername=None, f_change_time=140., shutter_time=1., 
+                 readtime=2., filtername=None, f_change_time=140., shutter_time=1.,
                  nside=default_nside, sun_limit=-13., quickTest=True, alt_limit=20.,
                  seed=-1, cloud_limit=0.699, cloud_step=15.,
                  scheduled_downtime=None, unscheduled_downtime=None,
@@ -137,12 +140,14 @@ class Speed_observatory(object):
         self.generate_sunsets()
         self.night = self.mjd2night(self.mjd)
 
+        # Make my dummy time handler
+        dth = dummy_time_handler(mjd_start)
+
         # Make a slewtime interpolator
         self.slew_interp = Slewtime_pre()
 
         # Compute downtimes
         self.down_nights = []
-        print(scheduled_downtime)
         if scheduled_downtime is not None:
             sdt = scheduled_downtime
         else:
@@ -161,28 +166,17 @@ class Speed_observatory(object):
             self.down_nights.extend(range(downtime[0], downtime[0]+downtime[1], 1))
         self.down_nights.sort()
 
-        # Instatiate a seeing model
-        if environment is not None:
-            env_config = environment
-        else:
-            env_config = Environment()
-
-        if filters is not None:
-            filter_config = filters
-        else:
-            filter_config = Filters()
-
         if seeing_model is not None:
             self.seeing_model = seeing_model
         else:
-            self.seeing_model = SeeingModel_no_time()
-        self.seeing_model.initialize(env_config, filter_config)
+            self.seeing_model = SeeingSim(dth)
 
         if cloud_model is not None:
             self.cloud_model = cloud_model
         else:
-            self.cloud_model = CloudModel_no_time()
-        self.cloud_model.initialize()
+            self.cloud_model = CloudModel(dth)
+            self.cloud_model.read_data()
+
         self.cloud_limit = cloud_limit
         self.cloud_step = cloud_step/60./24.
 
@@ -231,9 +225,11 @@ class Speed_observatory(object):
         result['airmass'] = self.sky.returnAirmass(self.mjd)
         delta_t = (self.mjd-self.mjd_start)*24.*3600.
         result['clouds'] = self.cloud_model.get_cloud(delta_t)
+        # XXX--can update to pull all filters at once
         for filtername in ['u', 'g', 'r', 'i', 'z', 'y']:
-            fwhm_500, fwhm_geometric, fwhm_effective = self.seeing_model.calculate_seeing(delta_t, filtername,
-                                                                                          result['airmass'])
+            fwhm_500, fwhm_geometric, fwhm_effective = self.seeing_model.get_seeing_singlefilter(delta_t,
+                                                                                                 filtername,
+                                                                                                 result['airmass'])
             result['FWHMeff_%s' % filtername] = fwhm_effective  # arcsec
             result['FWHM_geometric_%s' % filtername] = fwhm_geometric
         result['filter'] = self.filtername
@@ -420,4 +416,3 @@ class Speed_observatory(object):
         """
         self.mjd = mjd
         self.night = self.mjd2night(mjd)
-
