@@ -40,6 +40,7 @@ class dummy_time_handler(object):
 
     def time_since_given_datetime(self, datetime1, datetime2=None, reverse=False):
         """
+        Really? We need a method to do one line of arithmatic?
         """
         if datetime2 is None:
             datetime2 = self._unix_start
