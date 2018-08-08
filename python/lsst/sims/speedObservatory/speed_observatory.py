@@ -136,6 +136,7 @@ class Speed_observatory(object):
         self.obs.horizon = 0.
 
         self.sun = ephem.Sun()
+        self.moon = ephem.Moon()
 
         # Generate sunset times so we can label nights by integers
         self.generate_sunsets()
@@ -242,7 +243,14 @@ class Speed_observatory(object):
         sunMoon_info = self.sky.returnSunMoon(self.mjd)
         # Pretty sure these are radians
         result['sunAlt'] = np.max(sunMoon_info['sunAlt'])
+        self.obs.date = self.mjd - doff
+        self.moon.compute(self.obs)
         result['moonAlt'] = np.max(sunMoon_info['moonAlt'])
+        result['moonAz'] = self.moon.az
+        result['moonRA'] = np.max(sunMoon_info['moonRA'])
+        result['moonDec'] = np.max(sunMoon_info['moonDec'])
+        # I guess go between 0 and 100.
+        result['moonPhase'] = np.max(sunMoon_info['moonSunSep']/180.*100.)
         self.status = result
         return result
 
