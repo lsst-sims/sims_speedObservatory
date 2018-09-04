@@ -113,7 +113,7 @@ class Speed_observatory(object):
         self.sun_limit = np.radians(sun_limit)
         self.alt_limit = np.radians(alt_limit)
         # Load up the sky brightness model
-        self.sky = sb.SkyModelPre(preload=False, speedLoad=quickTest)
+        self.sky = sb.SkyModelPre(speedLoad=quickTest)
         # Should realy set this by inspecting the map.
         self.sky_nside = 32
 
