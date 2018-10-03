@@ -2,7 +2,17 @@ import numpy as np
 import unittest
 import lsst.sims.speedObservatory as speedo
 import lsst.utils.tests
-from lsst.sims.featureScheduler import empty_observation
+
+
+def test_obs():
+    names = ['RA', 'dec', 'mjd', 'exptime', 'filter', 'rotSkyPos', 'nexp',
+             'airmass', 'FWHMeff', 'FWHM_geometric', 'skybrightness', 'night', 'slewtime', 'fivesigmadepth',
+             'alt', 'az', 'clouds', 'moonAlt', 'sunAlt', 'note', 'field_id', 'survey_id', 'block_id']
+    # units of rad, rad,   days,  seconds,   string, radians (E of N?)
+    types = [float, float, float, float, '|U1', float, int, float, float, float, float, int, float, float,
+             float, float, float, float, float, '|U40', int, int, int]
+    result = np.zeros(1, dtype=list(zip(names, types)))
+    return result
 
 
 class TestSpeedObs(unittest.TestCase):
@@ -13,7 +23,7 @@ class TestSpeedObs(unittest.TestCase):
         status = so.return_status()
 
         # Check that we can get an observation
-        obs = empty_observation()
+        obs = test_observation()
         obs['dec'] = np.radians(-30.)
         obs['filter'] = 'r'
         obs['exptime'] = 30.
