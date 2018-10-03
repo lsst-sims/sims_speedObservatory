@@ -4,10 +4,7 @@ import lsst.sims.speedObservatory as speedo
 import lsst.utils.tests
 
 
-def empty_observation():
-    """
-    Return a numpy array that could be a handy observation record
-    """
+def test_obs():
     names = ['RA', 'dec', 'mjd', 'exptime', 'filter', 'rotSkyPos', 'nexp',
              'airmass', 'FWHMeff', 'FWHM_geometric', 'skybrightness', 'night', 'slewtime', 'fivesigmadepth',
              'alt', 'az', 'clouds', 'moonAlt', 'sunAlt', 'note', 'field_id', 'survey_id', 'block_id']
@@ -26,7 +23,7 @@ class TestSpeedObs(unittest.TestCase):
         status = so.return_status()
 
         # Check that we can get an observation
-        obs = empty_observation()
+        obs = test_observation()
         obs['dec'] = np.radians(-30.)
         obs['filter'] = 'r'
         obs['exptime'] = 30.
