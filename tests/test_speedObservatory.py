@@ -23,7 +23,7 @@ class TestSpeedObs(unittest.TestCase):
         status = so.return_status()
 
         # Check that we can get an observation
-        obs = test_observation()
+        obs = test_obs()
         obs['dec'] = np.radians(-30.)
         obs['filter'] = 'r'
         obs['exptime'] = 30.
