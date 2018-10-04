@@ -1,7 +1,7 @@
 from builtins import zip
 from builtins import object
 import numpy as np
-from lsst.sims.utils import _hpid2RaDec, _raDec2Hpid, Site, calcLmstLast
+from lsst.sims.utils import _hpid2RaDec, _raDec2Hpid, Site, calcLmstLast, _approx_RaDec2AltAz
 import lsst.sims.skybrightness_pre as sb
 import healpy as hp
 import ephem
@@ -32,53 +32,6 @@ def inrange(inval, minimum=-1., maximum=1.):
     above = np.where(inval > maximum)
     inval[above] = maximum
     return inval
-
-
-def stupidFast_RaDec2AltAz(ra, dec, lat, lon, mjd, lmst=None):
-    """
-    Convert Ra,Dec to Altitude and Azimuth.
-
-    Coordinate transformation is killing performance. Just use simple equations to speed it up
-    and ignore abberation, precesion, nutation, nutrition, etc.
-
-    Parameters
-    ----------
-    ra : array_like
-        RA, in radians.
-    dec : array_like
-        Dec, in radians. Must be same length as `ra`.
-    lat : float
-        Latitude of the observatory in radians.
-    lon : float
-        Longitude of the observatory in radians.
-    mjd : float
-        Modified Julian Date.
-    lmst : float (None)
-        The local mean sidereal time (computed if not given). (hours)
-
-    Returns
-    -------
-    alt : numpy.array
-        Altitude, same length as `ra` and `dec`. Radians.
-    az : numpy.array
-        Azimuth, same length as `ra` and `dec`. Radians.
-    """
-    if lmst is None:
-        lmst, last = calcLmstLast(mjd, lon)
-    lmst = lmst/12.*np.pi  # convert to rad
-    ha = lmst-ra
-    sindec = np.sin(dec)
-    sinlat = np.sin(lat)
-    coslat = np.cos(lat)
-    sinalt = sindec*sinlat+np.cos(dec)*coslat*np.cos(ha)
-    sinalt = inrange(sinalt)
-    alt = np.arcsin(sinalt)
-    cosaz = (sindec-np.sin(alt)*sinlat)/(np.cos(alt)*coslat)
-    cosaz = inrange(cosaz)
-    az = np.arccos(cosaz)
-    signflip = np.where(np.sin(ha) > 0)
-    az[signflip] = 2.*np.pi-az[signflip]
-    return alt, az
 
 
 class dummy_time_handler(object):
@@ -245,10 +198,10 @@ class Speed_observatory(object):
         Compute slew time to new ra, dec position
         """
 
-        current_alt, current_az = stupidFast_RaDec2AltAz(np.array([self.ra]),
-                                                         np.array([self.dec]),
-                                                         self.obs.lat, self.obs.lon,
-                                                         self.mjd)
+        current_alt, current_az = _approx_RaDec2AltAz(np.array([self.ra]),
+                                                      np.array([self.dec]),
+                                                      self.obs.lat, self.obs.lon,
+                                                      self.mjd)
         # Interpolation can be off by ~.1 seconds if there's no slew.
         if (np.max(current_alt) == np.max(alt)) & (np.max(current_az) == np.max(az)):
             time = mintime
@@ -262,8 +215,8 @@ class Speed_observatory(object):
         """
         if self.ra is None:
             return 0.
-        alt, az = stupidFast_RaDec2AltAz(self.ra_all_sky, self.dec_all_sky,
-                                         self.obs.lat, self.obs.lon, self.mjd)
+        alt, az = _approx_RaDec2AltAz(self.ra_all_sky, self.dec_all_sky,
+                                      self.obs.lat, self.obs.lon, self.mjd)
         good = np.where(alt >= self.alt_limit)
         result = np.empty(self.ra_all_sky.size, dtype=float)
         result.fill(hp.UNSEEN)
@@ -350,9 +303,9 @@ class Speed_observatory(object):
         """
         # If we were in a parked position, assume no time lost to slew, settle, filter change
         observation = observation_in.copy()
-        alt, az = stupidFast_RaDec2AltAz(np.array([observation['RA']]),
-                                         np.array([observation['dec']]),
-                                         self.obs.lat, self.obs.lon, self.mjd)
+        alt, az = _approx_RaDec2AltAz(np.array([observation['RA']]),
+                                      np.array([observation['dec']]),
+                                      self.obs.lat, self.obs.lon, self.mjd)
         if self.ra is not None:
             if self.filtername != observation['filter']:
                 ft = self.f_change_time
