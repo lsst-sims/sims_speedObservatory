@@ -234,18 +234,22 @@ class Speed_observatory(object):
         result['night'] = self.night
         result['lmst'], last = calcLmstLast(self.mjd, self.site.longitude_rad)
         result['skybrightness'] = self.sky.returnMags(self.mjd)
-        result['slewtimes'] = self.slewtime_map()
+        result['slewtime'] = self.slewtime_map()
         result['airmass'] = self.sky.returnAirmass(self.mjd)
         delta_t = (self.mjd-self.mjd_start)*24.*3600.
-        result['clouds'] = self.cloud_model.get_cloud(delta_t)
+        result['bulk_cloud'] = self.cloud_model.get_cloud(delta_t)
         # XXX--can update to pull all filters at once
+        result['FWHMeff'] = {}
+        result['FWHM_geometric'] = {}
         for filtername in ['u', 'g', 'r', 'i', 'z', 'y']:
             fwhm_500, fwhm_geometric, fwhm_effective = self.seeing_model.get_seeing_singlefilter(delta_t,
                                                                                                  filtername,
                                                                                                  result['airmass'])
-            result['FWHMeff_%s' % filtername] = fwhm_effective  # arcsec
-            result['FWHM_geometric_%s' % filtername] = fwhm_geometric
-        result['filter'] = self.filtername
+            result['FWHMeff'][filtername] = fwhm_effective  # arcsec
+            result['FWHM_geometric'][filtername] = fwhm_geometric
+        result['current_filter'] = self.filtername
+        # XXX--pretend we have all the filters loaded
+        result['mounted_filters'] = ['u', 'g', 'r', 'i', 'z', 'y']
         result['RA'] = self.ra
         result['dec'] = self.dec
         result['next_twilight_start'] = self.next_twilight_start(self.mjd)
@@ -350,8 +354,8 @@ class Speed_observatory(object):
             hpid = _raDec2Hpid(self.sky_nside, self.ra, self.dec)
             observation['skybrightness'] = self.sky.returnMags(observation['mjd'], indx=[hpid],
                                                                extrapolate=True)[self.filtername]
-            observation['FWHMeff'] = self.status['FWHMeff_%s' % self.filtername][hpid]
-            observation['FWHM_geometric'] = self.status['FWHM_geometric_%s' % self.filtername][hpid]
+            observation['FWHMeff'] = self.status['FWHMeff'][self.filtername][hpid]
+            observation['FWHM_geometric'] = self.status['FWHM_geometric'][self.filtername][hpid]
             observation['airmass'] = self.status['airmass'][hpid]
             observation['fivesigmadepth'] = m5_flat_sed(observation['filter'][0],
                                                         observation['skybrightness'],
@@ -360,7 +364,7 @@ class Speed_observatory(object):
                                                         observation['airmass'])
             observation['alt'] = alt
             observation['az'] = az
-            observation['clouds'] = self.status['clouds']
+            observation['clouds'] = self.status['bulk_cloud']
             observation['sunAlt'] = self.status['sunAlt']
             observation['moonAlt'] = self.status['moonAlt']
             # We had advanced the slew and filter change, so subtract that off and add the total visit time.
