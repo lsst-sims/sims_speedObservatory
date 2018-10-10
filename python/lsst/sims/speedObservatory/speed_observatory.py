@@ -250,8 +250,6 @@ class Speed_observatory(object):
         result['current_filter'] = self.filtername
         # XXX--pretend we have all the filters loaded
         result['mounted_filters'] = ['u', 'g', 'r', 'i', 'z', 'y']
-        result['RA'] = self.ra
-        result['dec'] = self.dec
         result['next_twilight_start'] = self.next_twilight_start(self.mjd)
         result['next_twilight_end'] = self.next_twilight_end(self.mjd)
         result['last_twilight_end'] = self.last_twilight_end(self.mjd)
