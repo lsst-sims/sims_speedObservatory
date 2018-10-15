@@ -230,6 +230,12 @@ class Speed_observatory(object):
         XXX-- Need to document all these with units!!!
         """
         result = {}
+        # Let's check the current MJD and advance it if we need to
+        mjd_checked = False
+        while not mjd_checked:
+            mjd_checked, updated_mjd = self.check_mjd(self.mjd)
+            # make sure night is updated as well
+            self.set_mjd(updated_mjd)
         result['mjd'] = self.mjd
         result['night'] = self.night
         result['lmst'], last = calcLmstLast(self.mjd, self.site.longitude_rad)
