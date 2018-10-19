@@ -6,7 +6,7 @@ import lsst.sims.skybrightness_pre as sb
 import healpy as hp
 import ephem
 from lsst.sims.speedObservatory.slew_pre import Slewtime_pre
-from lsst.sims.utils import m5_flat_sed
+from lsst.sims.utils import m5_flat_sed, _angularSeparation
 from . import version
 from lsst.sims.downtimeModel import ScheduledDowntime, UnscheduledDowntime
 from lsst.sims.seeingModel import SeeingSim
@@ -259,17 +259,20 @@ class Speed_observatory(object):
         result['next_twilight_start'] = self.next_twilight_start(self.mjd)
         result['next_twilight_end'] = self.next_twilight_end(self.mjd)
         result['last_twilight_end'] = self.last_twilight_end(self.mjd)
-        sunMoon_info = self.sky.returnSunMoon(self.mjd)
+        #sunMoon_info = self.sky.returnSunMoon(self.mjd)
         # Pretty sure these are radians
-        result['sunAlt'] = np.max(sunMoon_info['sunAlt'])
+        
         self.obs.date = self.mjd - doff
         self.moon.compute(self.obs)
-        result['moonAlt'] = np.max(sunMoon_info['moonAlt'])
+        self.sun.compute(self.obs)
+        result['moonAlt'] = self.moon.alt #np.max(sunMoon_info['moonAlt'])
         result['moonAz'] = self.moon.az
-        result['moonRA'] = np.max(sunMoon_info['moonRA'])
-        result['moonDec'] = np.max(sunMoon_info['moonDec'])
+        result['moonRA'] = self.moon.ra #np.max(sunMoon_info['moonRA'])
+        result['moonDec'] = self.moon.dec #np.max(sunMoon_info['moonDec'])
+        result['sunAlt'] = self.sun.alt #np.max(sunMoon_info['sunAlt'])
+        moon_sun_sep = _angularSeparation(self.moon.ra, self.moon.dec, self.sun.ra, self.sun.dec)
         # I guess go between 0 and 100.
-        result['moonPhase'] = np.max(sunMoon_info['moonSunSep']/180.*100.)
+        result['moonPhase'] = np.max(moon_sun_sep/np.pi*100.)
         self.status = result
         return result
 
@@ -285,22 +288,12 @@ class Speed_observatory(object):
             mjd += self.cloud_step
             return False, mjd
 
-        # Check if self.sky.info has night info, otherwise add it.
-        if 'night' not in self.sky.info.keys():
-            self.sky.info['night'] = self.mjd2night(self.sky.info['mjds'])
-            self.good_nights = np.in1d(self.sky.info['night'], self.down_nights, invert=True)
-
         # Check if sun is up
         self.obs.date = mjd - doff
         self.sun.compute(self.obs)
         if (self.sun.alt > self.sun_limit) | (self.mjd2night(mjd) in self.down_nights):
-            good = np.where((self.sky.info['mjds'] > mjd) & (self.sky.info['sunAlts'] <= self.sun_limit) &
-                            (self.good_nights))[0]
-            if np.size(good) == 0:
-                # hack to advance if we are at the end of the mjd list I think
-                mjd += 0.25
-            else:
-                mjd = self.sky.info['mjds'][good][0]
+            # If the sun is to high, or down night, should advance to the next sunrise.
+            mjd = self.next_open_dome(mjd)
             return False, mjd
         else:
             return True, mjd
@@ -415,6 +408,13 @@ class Speed_observatory(object):
         left = np.searchsorted(self.setting_sun_mjds, mjd_start)
         self.setting_sun_mjds = self.setting_sun_mjds[left:]
         self.setting_sun_nights = self.mjd2night(self.setting_sun_mjds)
+
+    def next_open_dome(self, mjd):
+        twi_limit = self.sun_limit
+        # find the next rising twilight. String to make it degrees I guess?
+        self.obs.horizon = str(np.degrees(twi_limit))
+        next_twi = self.obs.next_setting(self.sun, start=mjd-doff)+doff
+        return next_twi
 
     def next_twilight_start(self, mjd, twi_limit=-18.):
         # find the next rising twilight. String to make it degrees I guess?
